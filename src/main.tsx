@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 import { Toaster } from 'sonner';
+import { LanguageProvider } from './contexts/LanguageContext';
 import { registerServiceWorker, syncOfflineData } from './lib/pwa';
 
 // Register PWA service worker
@@ -16,7 +17,9 @@ window.addEventListener('online', () => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
-    <Toaster position="top-right" richColors />
+    <LanguageProvider>
+      <App />
+      <Toaster position="top-right" richColors />
+    </LanguageProvider>
   </StrictMode>,
 );

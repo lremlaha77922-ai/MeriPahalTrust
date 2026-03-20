@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+  const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -21,13 +23,13 @@ const Header = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const guidelinePages = [
-    { name: 'उपस्थिति नीति', path: '/guidelines/attendance' },
-    { name: 'सर्वे अपलोड नीति', path: '/guidelines/survey-upload' },
-    { name: 'दैनिक PDF नीति', path: '/guidelines/pdf-submission' },
-    { name: 'पंजीकरण शुल्क और जमा', path: '/guidelines/registration-fee' },
-    { name: 'सर्वे लक्ष्य', path: '/guidelines/survey-targets' },
-    { name: 'अनुशासन और समाप्ति', path: '/guidelines/discipline' },
-    { name: 'कानूनी क्षेत्राधिकार', path: '/guidelines/legal' },
+    { name: language === 'en' ? 'Attendance Policy' : 'उपस्थिति नीति', path: '/guidelines/attendance' },
+    { name: language === 'en' ? 'Survey Upload Policy' : 'सर्वे अपलोड नीति', path: '/guidelines/survey-upload' },
+    { name: language === 'en' ? 'Daily PDF Policy' : 'दैनिक PDF नीति', path: '/guidelines/pdf-submission' },
+    { name: language === 'en' ? 'Registration Fee & Deposit' : 'पंजीकरण शुल्क और जमा', path: '/guidelines/registration-fee' },
+    { name: language === 'en' ? 'Survey Targets' : 'सर्वे लक्ष्य', path: '/guidelines/survey-targets' },
+    { name: language === 'en' ? 'Discipline & Termination' : 'अनुशासन और समाप्ति', path: '/guidelines/discipline' },
+    { name: language === 'en' ? 'Legal Jurisdiction' : 'कानूनी क्षेत्राधिकार', path: '/guidelines/legal' },
   ];
 
   return (
@@ -45,9 +47,9 @@ const Header = () => {
             </div>
             <div className="hidden md:block">
               <h1 className="text-trust-blue font-bold text-lg leading-tight">
-                मेरी पहल फास्ट हेल्प
+                {language === 'en' ? 'Meri Pahal Fast Help' : 'मेरी पहल फास्ट हेल्प'}
               </h1>
-              <p className="text-sm text-gray-600">आर्टिस्ट वेलफेयर एसोसिएशन</p>
+              <p className="text-sm text-gray-600">{language === 'en' ? 'Artist Welfare Association' : 'आर्टिस्ट वेलफेयर एसोसिएशन'}</p>
             </div>
           </Link>
 
@@ -59,7 +61,7 @@ const Header = () => {
                 isActive('/') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              होम
+              {t('header.home')}
             </Link>
             <Link
               to="/about"
@@ -67,7 +69,7 @@ const Header = () => {
                 isActive('/about') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              हमारे बारे में
+              {t('header.about')}
             </Link>
             <Link
               to="/gallery"
@@ -75,7 +77,7 @@ const Header = () => {
                 isActive('/gallery') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              फोटो गैलरी
+              {t('header.gallery')}
             </Link>
             <Link
               to="/desi-didi-mart"
@@ -83,7 +85,7 @@ const Header = () => {
                 isActive('/desi-didi-mart') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              देसी दीदी मार्ट
+              {t('header.desiDidiMart')}
             </Link>
             <Link
               to="/swastha-sangini"
@@ -91,7 +93,7 @@ const Header = () => {
                 isActive('/swastha-sangini') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              स्वस्थ संगिनी कार्ड
+              {t('header.swasthaSangini')}
             </Link>
             
             {/* Guidelines Dropdown */}
@@ -101,7 +103,7 @@ const Header = () => {
               onMouseLeave={() => setShowGuidelines(false)}
             >
               <button className="font-medium text-gray-700 hover:text-trust-blue flex items-center">
-                दिशानिर्देश <ChevronDown className="ml-1 h-4 w-4" />
+                {t('header.guidelines')} <ChevronDown className="ml-1 h-4 w-4" />
               </button>
               {showGuidelines && (
                 <div className="absolute top-full left-0 mt-2 w-64 bg-white shadow-lg rounded-lg py-2 z-50">
@@ -124,7 +126,7 @@ const Header = () => {
                 isActive('/team') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              हमारी टीम
+              {t('header.team')}
             </Link>
             <Link
               to="/admin"
@@ -132,15 +134,25 @@ const Header = () => {
                 isActive('/admin') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              एडमिन लॉगिन
+              {t('header.adminLogin')}
             </Link>
+            
+            {/* Language Switcher */}
+            <button
+              onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+              className="flex items-center font-medium text-gray-700 hover:text-trust-blue transition-colors"
+              title={language === 'en' ? 'Switch to Hindi' : 'Switch to English'}
+            >
+              <Languages className="h-5 w-5 mr-1" />
+              {language === 'en' ? 'हिं' : 'EN'}
+            </button>
           </nav>
 
           {/* CTA Button */}
           <div className="hidden lg:block">
             <Link to="/join">
               <Button className="bg-trust-gold hover:bg-amber-600 text-white font-semibold">
-                अभी जुड़ें
+                {t('header.joinNow')}
               </Button>
             </Link>
           </div>
@@ -162,38 +174,38 @@ const Header = () => {
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              होम
+              {t('header.home')}
             </Link>
             <Link
               to="/about"
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              हमारे बारे में
+              {t('header.about')}
             </Link>
             <Link
               to="/gallery"
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              फोटो गैलरी
+              {t('header.gallery')}
             </Link>
             <Link
               to="/desi-didi-mart"
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              देसी दीदी मार्ट
+              {t('header.desiDidiMart')}
             </Link>
             <Link
               to="/swastha-sangini"
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              स्वस्थ संगिनी कार्ड
+              {t('header.swasthaSangini')}
             </Link>
             <div className="py-2">
-              <p className="font-semibold text-gray-900 mb-2">दिशानिर्देश</p>
+              <p className="font-semibold text-gray-900 mb-2">{t('header.guidelines')}</p>
               <div className="pl-4 space-y-2">
                 {guidelinePages.map((page) => (
                   <Link
@@ -212,18 +224,25 @@ const Header = () => {
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              हमारी टीम
+              {t('header.team')}
             </Link>
             <Link
               to="/admin"
               onClick={() => setIsOpen(false)}
               className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              एडमिन लॉगिन
+              {t('header.adminLogin')}
             </Link>
+            <button
+              onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+              className="block py-2 text-gray-700 hover:text-trust-blue font-medium flex items-center"
+            >
+              <Languages className="h-4 w-4 mr-2" />
+              {language === 'en' ? 'Switch to Hindi' : 'Switch to English'}
+            </button>
             <Link to="/join" onClick={() => setIsOpen(false)}>
               <Button className="w-full bg-trust-gold hover:bg-amber-600 text-white font-semibold mt-2">
-                अभी जुड़ें
+                {t('header.joinNow')}
               </Button>
             </Link>
           </div>
