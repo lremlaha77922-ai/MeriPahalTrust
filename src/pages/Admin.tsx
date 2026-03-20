@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,29 +10,39 @@ import { Lock, Mail, Loader2 } from 'lucide-react';
 
 const Admin = () => {
   const navigate = useNavigate();
+  const { login } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
+
+    // Validation
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      setLoading(false);
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address');
+      setLoading(false);
+      return;
+    }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        toast.success('लॉगिन सफल!');
-        navigate('/admin/dashboard');
-      }
+      await login(email, password);
+      toast.success('Login successful!');
+      navigate('/admin/panel');
     } catch (error: any) {
       console.error('Login error:', error);
-      toast.error('लॉगिन विफल। कृपया अपनी जानकारी जांचें।');
+      const errorMessage = error.message || 'Login failed. Please check your credentials.';
+      setError(errorMessage);
+      toast.error(errorMessage);
       setLoading(false);
     }
   };
@@ -51,6 +62,12 @@ const Admin = () => {
               मेरी पहल ट्रस्ट - प्रशासन पैनल
             </p>
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
@@ -103,8 +120,11 @@ const Admin = () => {
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              केवल अधिकृत व्यक्ति ही लॉगिन कर सकते हैं
+              Only authorized personnel can log in
             </p>
+            <Link to="/admin/panel" className="text-sm text-trust-blue hover:underline mt-2 inline-block">
+              Go to Admin Panel
+            </Link>
           </div>
         </div>
 
