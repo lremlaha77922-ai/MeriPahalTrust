@@ -23,6 +23,7 @@ import MobileSurveyApp from '@/pages/MobileSurveyApp';
 import Gallery from '@/pages/Gallery';
 import Shop from '@/pages/Shop';
 import Cart from '@/pages/Cart';
+import ProductDetail from '@/pages/ProductDetail';
 import NotFound from '@/pages/NotFound';
 
 // Guideline Pages
@@ -60,6 +61,7 @@ function App() {
             <Route path="/desi-didi-mart" element={<DesiDidiMart />} />
             <Route path="/shop" element={<Shop />} />
             <Route path="/cart" element={<Cart />} />
+            <Route path="/product/:slug" element={<ProductDetail />} />
             <Route path="/swastha-sangini" element={<SwasthaSangini />} />
             <Route path="/swastha-sangini/apply" element={<SwasthaSanginiApply />} />
             <Route path="/swastha-sangini/success" element={<SwasthaSanginiSuccess />} />
