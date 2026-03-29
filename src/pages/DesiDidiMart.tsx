@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AdminContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -41,7 +41,7 @@ interface Product {
 }
 
 const DesiDidiMart = () => {
-  const { user } = useAuth();
+  const { user } = useAdmin();
   const [categories, setCategories] = useState<Category[]>([]);
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [bestsellerProducts, setBestsellerProducts] = useState<Product[]>([]);
