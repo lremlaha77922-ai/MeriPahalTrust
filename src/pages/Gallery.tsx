@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
   X, Play, ChevronLeft, ChevronRight, Filter, Star, Image as ImageIcon,
-  Pause, Maximize, Minimize, Settings, Zap, Clock, Snail
+  Pause, Maximize, Minimize, Settings, Zap, Clock, Snail, Volume2, VolumeX, Mic, MicOff
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 
 interface GalleryItem {
   id: string;
@@ -32,11 +34,17 @@ const ITEMS_PER_PAGE = 12;
 
 type TransitionEffect = 'fade' | 'slide' | 'zoom' | 'flip';
 type SlideSpeed = 'slow' | 'normal' | 'fast';
+type NarrationLanguage = 'en-US' | 'hi-IN';
 
 const SPEED_VALUES: Record<SlideSpeed, number> = {
   slow: 5000,
   normal: 3000,
   fast: 1500,
+};
+
+const LANGUAGE_NAMES: Record<NarrationLanguage, string> = {
+  'en-US': 'English',
+  'hi-IN': 'हिंदी (Hindi)',
 };
 
 const Gallery = () => {
@@ -58,6 +66,14 @@ const Gallery = () => {
   const [showSettings, setShowSettings] = useState(false);
   const slideshowInterval = useRef<NodeJS.Timeout | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+  
+  // Voice narration controls
+  const [narrationEnabled, setNarrationEnabled] = useState(false);
+  const [narrationVolume, setNarrationVolume] = useState(0.8);
+  const [narrationLanguage, setNarrationLanguage] = useState<NarrationLanguage>('en-US');
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const categories = [
     { value: 'all', label: 'All Media', icon: ImageIcon },
@@ -67,6 +83,28 @@ const Gallery = () => {
     { value: 'beneficiaries', label: 'Beneficiaries', icon: ImageIcon },
     { value: 'general', label: 'General', icon: ImageIcon },
   ];
+
+  // Check speech synthesis support
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      setSpeechSupported(true);
+      // Load voices
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    } else {
+      setSpeechSupported(false);
+      console.warn('Speech synthesis not supported in this browser');
+    }
+    
+    return () => {
+      // Clean up speech on unmount
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   // Fetch initial items
   useEffect(() => {
@@ -172,6 +210,7 @@ const Gallery = () => {
   const closeLightbox = () => {
     setLightboxOpen(false);
     stopSlideshow();
+    stopNarration();
     document.body.style.overflow = 'auto';
     if (document.fullscreenElement) {
       document.exitFullscreen();
@@ -202,6 +241,71 @@ const Gallery = () => {
     }
   };
 
+  // Voice narration functions
+  const speakText = (text: string, lang: NarrationLanguage) => {
+    if (!speechSupported || !text) return;
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utteranceRef.current = utterance;
+
+    // Get available voices
+    const voices = window.speechSynthesis.getVoices();
+    
+    // Find voice for selected language
+    const voice = voices.find(v => v.lang.startsWith(lang.split('-')[0]));
+    if (voice) {
+      utterance.voice = voice;
+    }
+    
+    utterance.lang = lang;
+    utterance.volume = narrationVolume;
+    utterance.rate = slideSpeed === 'slow' ? 0.8 : slideSpeed === 'fast' ? 1.2 : 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = (event) => {
+      console.error('Speech synthesis error:', event);
+      setIsSpeaking(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopNarration = () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  const toggleNarration = () => {
+    const newState = !narrationEnabled;
+    setNarrationEnabled(newState);
+    
+    if (!newState) {
+      stopNarration();
+    } else if (currentItem) {
+      narrateCurrentItem();
+    }
+  };
+
+  const narrateCurrentItem = () => {
+    if (!narrationEnabled || !currentItem) return;
+
+    const text = `${currentItem.title}. ${currentItem.description || ''}`;
+    speakText(text, narrationLanguage);
+  };
+
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
       try {
@@ -216,6 +320,18 @@ const Gallery = () => {
       setIsFullscreen(false);
     }
   };
+
+  // Narrate when item changes
+  useEffect(() => {
+    if (lightboxOpen && narrationEnabled && currentItem) {
+      // Small delay to allow transition
+      const timer = setTimeout(() => {
+        narrateCurrentItem();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentIndex, lightboxOpen, narrationEnabled, narrationLanguage]);
 
   // Auto-advance slideshow
   useEffect(() => {
@@ -424,23 +540,54 @@ const Gallery = () => {
               <button
                 onClick={() => setIsPlaying(!isPlaying)}
                 className="w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+                aria-label={isPlaying ? 'Pause slideshow' : 'Play slideshow'}
               >
                 {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 text-white ml-1" />}
               </button>
 
+              {speechSupported && (
+                <button
+                  onClick={toggleNarration}
+                  className={`w-12 h-12 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors ${
+                    narrationEnabled 
+                      ? 'bg-green-500/30 hover:bg-green-500/40' 
+                      : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                  aria-label={narrationEnabled ? 'Disable narration' : 'Enable narration'}
+                >
+                  {narrationEnabled ? (
+                    isSpeaking ? <Mic className="h-6 w-6 text-white animate-pulse" /> : <Mic className="h-6 w-6 text-white" />
+                  ) : (
+                    <MicOff className="h-6 w-6 text-white" />
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+                aria-label="Settings"
               >
                 <Settings className="h-6 w-6 text-white" />
               </button>
 
-              {isPlaying && (
-                <div className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-white text-sm font-medium flex items-center space-x-2">
-                  {slideSpeed === 'slow' && <Snail className="h-4 w-4" />}
-                  {slideSpeed === 'normal' && <Clock className="h-4 w-4" />}
-                  {slideSpeed === 'fast' && <Zap className="h-4 w-4" />}
-                  <span className="capitalize">{slideSpeed}</span>
+              {(isPlaying || narrationEnabled) && (
+                <div className="px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-white text-sm font-medium flex items-center space-x-3">
+                  {isPlaying && (
+                    <div className="flex items-center space-x-1">
+                      {slideSpeed === 'slow' && <Snail className="h-4 w-4" />}
+                      {slideSpeed === 'normal' && <Clock className="h-4 w-4" />}
+                      {slideSpeed === 'fast' && <Zap className="h-4 w-4" />}
+                      <span className="capitalize">{slideSpeed}</span>
+                    </div>
+                  )}
+                  {isPlaying && narrationEnabled && <span className="text-white/50">•</span>}
+                  {narrationEnabled && (
+                    <div className="flex items-center space-x-1">
+                      <Volume2 className="h-4 w-4" />
+                      <span>{Math.round(narrationVolume * 100)}%</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -449,6 +596,7 @@ const Gallery = () => {
               <button
                 onClick={toggleFullscreen}
                 className="w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
               >
                 {isFullscreen ? <Minimize className="h-6 w-6 text-white" /> : <Maximize className="h-6 w-6 text-white" />}
               </button>
@@ -456,6 +604,7 @@ const Gallery = () => {
               <button
                 onClick={closeLightbox}
                 className="w-12 h-12 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center transition-colors"
+                aria-label="Close lightbox"
               >
                 <X className="h-6 w-6 text-white" />
               </button>
@@ -464,47 +613,132 @@ const Gallery = () => {
 
           {/* Settings Panel */}
           {showSettings && (
-            <div className="absolute top-20 left-4 z-50 bg-black/90 backdrop-blur-md rounded-lg p-6 w-80 text-white">
+            <div className="absolute top-20 left-4 z-50 bg-black/90 backdrop-blur-md rounded-lg p-6 w-96 text-white max-h-[80vh] overflow-y-auto">
               <h3 className="text-lg font-bold mb-4">Slideshow Settings</h3>
               
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-gray-300 mb-2 block">Transition Speed</label>
-                  <Select value={slideSpeed} onValueChange={(value: SlideSpeed) => setSlideSpeed(value)}>
-                    <SelectTrigger className="bg-white/10 border-white/20 text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-gray-900 border-gray-700 text-white">
-                      <SelectItem value="slow">Slow (5s)</SelectItem>
-                      <SelectItem value="normal">Normal (3s)</SelectItem>
-                      <SelectItem value="fast">Fast (1.5s)</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="space-y-6">
+                {/* Slideshow Settings */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-semibold text-gray-300 uppercase">Slideshow</h4>
+                  
+                  <div>
+                    <Label className="text-sm text-gray-300 mb-2 block">Transition Speed</Label>
+                    <Select value={slideSpeed} onValueChange={(value: SlideSpeed) => setSlideSpeed(value)}>
+                      <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                        <SelectItem value="slow">Slow (5s)</SelectItem>
+                        <SelectItem value="normal">Normal (3s)</SelectItem>
+                        <SelectItem value="fast">Fast (1.5s)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm text-gray-300 mb-2 block">Transition Effect</Label>
+                    <Select value={transitionEffect} onValueChange={(value: TransitionEffect) => setTransitionEffect(value)}>
+                      <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                        <SelectItem value="fade">Fade</SelectItem>
+                        <SelectItem value="slide">Slide</SelectItem>
+                        <SelectItem value="zoom">Zoom</SelectItem>
+                        <SelectItem value="flip">Flip</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-sm text-gray-300 mb-2 block">Transition Effect</label>
-                  <Select value={transitionEffect} onValueChange={(value: TransitionEffect) => setTransitionEffect(value)}>
-                    <SelectTrigger className="bg-white/10 border-white/20 text-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-gray-900 border-gray-700 text-white">
-                      <SelectItem value="fade">Fade</SelectItem>
-                      <SelectItem value="slide">Slide</SelectItem>
-                      <SelectItem value="zoom">Zoom</SelectItem>
-                      <SelectItem value="flip">Flip</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Voice Narration Settings */}
+                {speechSupported && (
+                  <div className="space-y-4 pt-4 border-t border-white/20">
+                    <h4 className="text-sm font-semibold text-gray-300 uppercase flex items-center">
+                      <Volume2 className="h-4 w-4 mr-2" />
+                      Voice Narration
+                    </h4>
+
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-gray-300">Enable Narration</Label>
+                      <button
+                        onClick={toggleNarration}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          narrationEnabled ? 'bg-green-500' : 'bg-white/20'
+                        }`}
+                        aria-label={narrationEnabled ? 'Disable narration' : 'Enable narration'}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            narrationEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {narrationEnabled && (
+                      <>
+                        <div>
+                          <Label className="text-sm text-gray-300 mb-3 block flex items-center justify-between">
+                            <span>Volume</span>
+                            <span className="text-white font-medium">{Math.round(narrationVolume * 100)}%</span>
+                          </Label>
+                          <div className="flex items-center space-x-3">
+                            <VolumeX className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <Slider
+                              value={[narrationVolume * 100]}
+                              onValueChange={(value) => setNarrationVolume(value[0] / 100)}
+                              max={100}
+                              step={5}
+                              className="flex-1"
+                            />
+                            <Volume2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-sm text-gray-300 mb-2 block">Narration Language</Label>
+                          <Select value={narrationLanguage} onValueChange={(value: NarrationLanguage) => setNarrationLanguage(value)}>
+                            <SelectTrigger className="bg-white/10 border-white/20 text-white">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                              <SelectItem value="en-US">English</SelectItem>
+                              <SelectItem value="hi-IN">हिंदी (Hindi)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                          <p className="text-xs text-blue-200">
+                            <strong className="flex items-center mb-1">
+                              <Mic className="h-3 w-3 mr-1" />
+                              Accessibility Feature
+                            </strong>
+                            Voice narration reads item titles and descriptions aloud, making the gallery accessible to visually impaired users.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {!speechSupported && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                    <p className="text-xs text-amber-200">
+                      Voice narration is not supported in your browser. Please use a modern browser like Chrome, Firefox, or Edge.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 pt-4 border-t border-white/20">
                 <p className="text-xs text-gray-400">
                   <strong>Keyboard Shortcuts:</strong><br />
-                  Space: Play/Pause<br />
-                  ← →: Navigate<br />
-                  F: Fullscreen<br />
-                  Esc: Exit
+                  Space: Play/Pause Slideshow<br />
+                  ← →: Navigate Items<br />
+                  F: Toggle Fullscreen<br />
+                  Esc: Exit Lightbox
                 </p>
               </div>
             </div>
@@ -516,6 +750,7 @@ const Gallery = () => {
               goToPrevious();
             }}
             className="absolute left-4 z-50 w-12 h-12 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors"
+            aria-label="Previous item"
           >
             <ChevronLeft className="h-6 w-6 text-white" />
           </button>
@@ -526,6 +761,7 @@ const Gallery = () => {
               goToNext();
             }}
             className="absolute right-4 z-50 w-12 h-12 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors"
+            aria-label="Next item"
           >
             <ChevronRight className="h-6 w-6 text-white" />
           </button>
