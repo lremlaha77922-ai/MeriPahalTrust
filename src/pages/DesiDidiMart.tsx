@@ -1,417 +1,689 @@
+import { useState, useEffect } from 'react';
+import { 
+  Search, ShoppingCart, Heart, User, Menu, ChevronDown, Star, 
+  TrendingUp, Zap, Gift, Package, Filter, SlidersHorizontal, X,
+  Phone, MapPin, Truck, Shield, ArrowRight, ChevronRight, Globe
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ShoppingBag, Store, Users, Gift, Star, Check, ArrowRight, Phone, Globe, ShoppingCart, Package, TrendingUp, Award, Heart, Sparkles } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
-import { useScrollReveal } from '@/hooks/useScrollReveal';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AdminContext';
+import { toast } from 'sonner';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  image_url: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  slug: string;
+  short_description: string;
+  price: number;
+  mrp: number;
+  discount_percent: number;
+  images: string[];
+  average_rating: number;
+  review_count: number;
+  is_featured: boolean;
+  is_bestseller: boolean;
+  stock_quantity: number;
+}
 
 const DesiDidiMart = () => {
-  const productsRef = useScrollReveal();
-  const featuresRef = useScrollReveal();
+  const { user } = useAuth();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [bestsellerProducts, setBestsellerProducts] = useState<Product[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartCount, setCartCount] = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const products = [
-    {
-      category: 'घर का राशन',
-      items: ['मसाले (मिर्च, हल्दी, धनिया)', 'आटा, बेसन', 'सरसों का तेल, रिफाइनरी तेल', 'दाल, चावल', 'चाय, चीनी', 'मिनरल वाटर'],
-      icon: '🌾',
-      color: 'from-amber-500 to-orange-600',
-    },
-    {
-      category: 'खाद्य पदार्थ',
-      items: ['अचार, मुरब्बा', 'बिस्किट, नमकीन', 'अगरबत्ती'],
-      icon: '🍪',
-      color: 'from-green-500 to-emerald-600',
-    },
-    {
-      category: 'सफाई सामग्री',
-      items: ['झाड़ू', 'फर्श क्लीनर', 'हैंडवॉश', 'वाइपर', 'हर्बल सोप'],
-      icon: '🧹',
-      color: 'from-blue-500 to-cyan-600',
-    },
-    {
-      category: 'कपड़े और जूते',
-      items: ['कपड़े', 'जूते-चप्पल', 'जूट के बैग', 'कपड़े के बैग'],
-      icon: '👗',
-      color: 'from-purple-500 to-pink-600',
-    },
-    {
-      category: 'इलेक्ट्रॉनिक्स',
-      items: ['LED बल्ब', 'चार्जेबल बल्ब', 'मोबाइल चार्जर', 'पावर बैंक', 'स्मार्ट TV'],
-      icon: '💡',
-      color: 'from-indigo-500 to-blue-600',
-    },
-  ];
+  useEffect(() => {
+    fetchCategories();
+    fetchFeaturedProducts();
+    fetchBestsellerProducts();
+    if (user) {
+      fetchCartCount();
+      fetchWishlistCount();
+    }
+  }, [user]);
 
-  const features = [
-    {
-      title: 'स्थानीय स्तर पर स्थापना',
-      description: 'पंचायत, ब्लॉक और जिला स्तर पर मार्ट की स्थापना',
-      icon: <Store className="h-8 w-8" />,
-      color: 'bg-blue-500',
-    },
-    {
-      title: 'नि:शुल्क प्रशिक्षण',
-      description: 'महिलाओं को उत्पाद निर्माण का निःशुल्क प्रशिक्षण',
-      icon: <Users className="h-8 w-8" />,
-      color: 'bg-green-500',
-    },
-    {
-      title: '30-40% की छूट',
-      description: 'बाजार मूल्य से 30% से 40% तक सस्ते उत्पाद',
-      icon: <Gift className="h-8 w-8" />,
-      color: 'bg-amber-500',
-    },
-    {
-      title: '100% देसी और शुद्ध',
-      description: 'केवल शुद्ध, देसी व गुणवत्तायुक्त उत्पाद',
-      icon: <Star className="h-8 w-8" />,
-      color: 'bg-purple-500',
-    },
-    {
-      title: 'ऑनलाइन + ऑफलाइन',
-      description: 'वेबसाइट और मोबाइल ऐप के जरिए भी उपलब्ध',
-      icon: <Globe className="h-8 w-8" />,
-      color: 'bg-indigo-500',
-    },
-    {
-      title: 'SHG को आमंत्रण',
-      description: 'स्वयं सहायता समूहों से उत्पाद खरीदारी',
-      icon: <Package className="h-8 w-8" />,
-      color: 'bg-pink-500',
-    },
-  ];
+  const fetchCategories = async () => {
+    const { data } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('is_active', true)
+      .is('parent_id', null)
+      .order('display_order', { ascending: true })
+      .limit(8);
+    
+    if (data) setCategories(data);
+  };
 
-  const membershipBenefits = [
-    '30% से 40% तक की छूट',
-    'प्रति माह ₹3000 की खरीददारी पर 12वें महीने में ₹3000 का बोनस',
-    'विशेष सदस्यता कार्ड',
-    'प्राथमिकता सेवा',
-    'नए उत्पादों की पहली जानकारी',
-  ];
+  const fetchFeaturedProducts = async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('is_active', true)
+      .eq('is_featured', true)
+      .limit(8);
+    
+    if (data) setFeaturedProducts(data);
+  };
+
+  const fetchBestsellerProducts = async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .eq('is_active', true)
+      .eq('is_bestseller', true)
+      .limit(12);
+    
+    if (data) setBestsellerProducts(data);
+  };
+
+  const fetchCartCount = async () => {
+    if (!user) return;
+    const { count } = await supabase
+      .from('cart_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+    
+    setCartCount(count || 0);
+  };
+
+  const fetchWishlistCount = async () => {
+    if (!user) return;
+    const { count } = await supabase
+      .from('wishlist')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+    
+    setWishlistCount(count || 0);
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      window.location.href = `/shop?search=${encodeURIComponent(searchQuery)}`;
+    }
+  };
+
+  const addToWishlist = async (productId: string) => {
+    if (!user) {
+      toast.error('Please login to add items to wishlist');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('wishlist')
+      .insert({ user_id: user.id, product_id: productId });
+
+    if (error) {
+      if (error.code === '23505') {
+        toast.info('Already in wishlist');
+      } else {
+        toast.error('Failed to add to wishlist');
+      }
+    } else {
+      toast.success('Added to wishlist');
+      fetchWishlistCount();
+    }
+  };
+
+  const addToCart = async (productId: string) => {
+    if (!user) {
+      toast.error('Please login to add items to cart');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('cart_items')
+      .insert({ user_id: user.id, product_id: productId, quantity: 1 })
+      .select();
+
+    if (error) {
+      if (error.code === '23505') {
+        const { error: updateError } = await supabase
+          .from('cart_items')
+          .update({ quantity: supabase.sql`quantity + 1` })
+          .eq('user_id', user.id)
+          .eq('product_id', productId);
+        
+        if (!updateError) {
+          toast.success('Cart updated');
+          fetchCartCount();
+        }
+      } else {
+        toast.error('Failed to add to cart');
+      }
+    } else {
+      toast.success('Added to cart');
+      fetchCartCount();
+    }
+  };
+
+  const ProductCard = ({ product }: { product: Product }) => {
+    const discount = product.mrp > product.price 
+      ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
+      : 0;
+    
+    const primaryImage = product.images && product.images.length > 0 
+      ? product.images[0] 
+      : 'https://via.placeholder.com/300x300?text=No+Image';
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm hover:shadow-xl transition-all duration-300 group overflow-hidden border border-gray-100">
+        <div className="relative overflow-hidden">
+          <Link to={`/product/${product.slug}`}>
+            <img
+              src={primaryImage}
+              alt={product.name}
+              className="w-full h-64 object-cover group-hover:scale-110 transition-transform duration-500"
+            />
+          </Link>
+          
+          {discount > 0 && (
+            <div className="absolute top-3 left-3 bg-green-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+              {discount}% OFF
+            </div>
+          )}
+          
+          {product.is_featured && (
+            <div className="absolute top-3 right-3 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center">
+              <Star className="h-3 w-3 mr-1" />
+              Featured
+            </div>
+          )}
+
+          <button
+            onClick={() => addToWishlist(product.id)}
+            className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-pink-50"
+          >
+            <Heart className="h-5 w-5 text-pink-600" />
+          </button>
+
+          {product.stock_quantity === 0 && (
+            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <span className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold">
+                Out of Stock
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4">
+          <Link to={`/product/${product.slug}`}>
+            <h3 className="font-semibold text-gray-900 line-clamp-2 mb-2 hover:text-trust-blue">
+              {product.name}
+            </h3>
+          </Link>
+          
+          {product.short_description && (
+            <p className="text-sm text-gray-600 line-clamp-1 mb-3">
+              {product.short_description}
+            </p>
+          )}
+
+          <div className="flex items-center mb-3">
+            {product.average_rating > 0 && (
+              <div className="flex items-center bg-green-600 text-white px-2 py-0.5 rounded text-sm font-semibold mr-2">
+                {product.average_rating.toFixed(1)}
+                <Star className="h-3 w-3 ml-1 fill-current" />
+              </div>
+            )}
+            {product.review_count > 0 && (
+              <span className="text-sm text-gray-500">
+                ({product.review_count.toLocaleString()})
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-baseline space-x-2 mb-3">
+            <span className="text-2xl font-bold text-gray-900">
+              ₹{product.price.toLocaleString()}
+            </span>
+            {product.mrp > product.price && (
+              <>
+                <span className="text-sm text-gray-500 line-through">
+                  ₹{product.mrp.toLocaleString()}
+                </span>
+                <span className="text-sm text-green-600 font-semibold">
+                  {discount}% off
+                </span>
+              </>
+            )}
+          </div>
+
+          <Button
+            onClick={() => addToCart(product.id)}
+            disabled={product.stock_quantity === 0}
+            className="w-full bg-trust-blue hover:bg-blue-700 text-white font-semibold"
+          >
+            <ShoppingCart className="h-4 w-4 mr-2" />
+            Add to Cart
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-pink-600 via-rose-600 to-red-600 text-white py-20">
+      {/* Navbar */}
+      <nav className="bg-white shadow-md sticky top-0 z-50">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <div className="inline-flex items-center bg-white/20 backdrop-blur-sm px-6 py-2 rounded-full mb-6 animate-fade-in">
-              <Sparkles className="h-5 w-5 mr-2" />
-              <span className="font-semibold">महिला सशक्तिकरण की पहल</span>
-            </div>
-            <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight animate-fade-in-up">
-              देसी दीदी मार्ट
-            </h1>
-            <p className="text-xl md:text-2xl mb-4 text-pink-100 animate-fade-in-up delay-200">
-              100% देसी • 100% शुद्ध • 30-40% सस्ता
-            </p>
-            <p className="text-lg mb-8 text-pink-50 animate-fade-in-up delay-300">
-              मेरी पहल फास्ट हेल्प आर्टिस्ट वेलफेयर एसोसिएशन ट्रस्ट द्वारा संचालित
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in-up delay-400">
-              <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
-                <Button size="lg" className="bg-white text-pink-600 hover:bg-pink-50 font-bold text-lg px-8 py-6 hover-scale">
-                  <Phone className="mr-2 h-5 w-5" />
-                  अभी संपर्क करें
-                </Button>
-              </a>
-              <Button size="lg" variant="outline" className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-pink-600 font-bold text-lg px-8 py-6 hover-scale">
-                <ShoppingCart className="mr-2 h-5 w-5" />
-                डिस्ट्रीब्यूटर बनें
+          {/* Top Bar */}
+          <div className="flex items-center justify-between py-4">
+            {/* Logo */}
+            <Link to="/desi-didi-mart" className="flex items-center space-x-2">
+              <div className="w-10 h-10 bg-gradient-to-r from-pink-600 to-rose-600 rounded-lg flex items-center justify-center">
+                <Package className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Desi Didi Mart</h1>
+                <p className="text-xs text-gray-600">100% देसी • 100% शुद्ध</p>
+              </div>
+            </Link>
+
+            {/* Search Bar - Desktop */}
+            <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-2xl mx-8">
+              <div className="relative w-full">
+                <Input
+                  type="text"
+                  placeholder="Search for products, brands and more..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-4 pr-12 h-11 border-gray-300 focus:border-trust-blue"
+                />
+                <button
+                  type="submit"
+                  className="absolute right-0 top-0 h-11 px-6 bg-trust-blue text-white rounded-r-md hover:bg-blue-700 transition-colors"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+              </div>
+            </form>
+
+            {/* Right Menu */}
+            <div className="flex items-center space-x-6">
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="hidden md:flex items-center space-x-2">
+                      <User className="h-5 w-5" />
+                      <span className="font-semibold">{user.username}</span>
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem asChild>
+                      <Link to="/account/profile" className="cursor-pointer">My Profile</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/account/orders" className="cursor-pointer">My Orders</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/account/wishlist" className="cursor-pointer">Wishlist</Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link to="/account/addresses" className="cursor-pointer">Addresses</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Link to="/admin">
+                  <Button variant="ghost" className="hidden md:flex items-center space-x-2 font-semibold">
+                    <User className="h-5 w-5" />
+                    <span>Login</span>
+                  </Button>
+                </Link>
+              )}
+
+              <Link to="/account/wishlist" className="hidden md:flex items-center space-x-2 hover:text-pink-600 transition-colors relative">
+                <Heart className="h-6 w-6" />
+                {wishlistCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-pink-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                    {wishlistCount}
+                  </span>
+                )}
+                <span className="font-semibold">Wishlist</span>
+              </Link>
+
+              <Link to="/cart" className="flex items-center space-x-2 hover:text-trust-blue transition-colors relative">
+                <ShoppingCart className="h-6 w-6" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-trust-blue text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                    {cartCount}
+                  </span>
+                )}
+                <span className="font-semibold hidden md:inline">Cart</span>
+              </Link>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                onClick={() => setShowMobileMenu(!showMobileMenu)}
+              >
+                <Menu className="h-6 w-6" />
               </Button>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* About Section */}
-      <div className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-4xl font-bold text-gray-900 mb-4 flex items-center justify-center">
-                <Heart className="h-10 w-10 mr-3 text-pink-600" />
-                देसी दीदी मार्ट क्या है?
-              </h2>
-              <div className="w-24 h-1 bg-gradient-to-r from-pink-600 to-red-600 mx-auto mb-6"></div>
-            </div>
-
-            <div className="bg-gradient-to-br from-pink-50 to-rose-50 p-8 rounded-2xl shadow-lg border-2 border-pink-200 hover-lift">
-              <p className="text-lg text-gray-800 leading-relaxed mb-6">
-                <strong className="text-pink-600">👉 संगीत कलाकार यूनियन के सदस्यों के लिए विशेष पहल</strong>
-              </p>
-              <p className="text-gray-700 leading-relaxed mb-4">
-                "देसी दीदी मार्ट" एक सशक्त पहल है जिसका संचालन <strong>मेरी पहल फास्ट हेल्प आर्टिस्ट वेलफेयर एसोसिएशन (ट्रस्ट)</strong> द्वारा किया जा रहा है। 
-              </p>
-              <p className="text-gray-700 leading-relaxed">
-                इस योजना का मुख्य उद्देश्य है – <strong className="text-pink-600">महिला सशक्तिकरण और स्वरोजगार</strong> को बढ़ावा देना, ताकि हमारे कलाकारों, सदस्यों और उनके परिवारजनों को <strong className="text-pink-600">आत्मनिर्भर</strong> बनाया जा सके।
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Features Section */}
-      <div className="py-16 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">मार्ट की विशेषताएँ</h2>
-            <div className="w-24 h-1 bg-gradient-to-r from-pink-600 to-red-600 mx-auto"></div>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto" ref={featuresRef.ref}>
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className={`bg-white p-6 rounded-xl shadow-lg hover-lift border-t-4 border-pink-500 transition-all duration-500 ${
-                  featuresRef.isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-                }`}
-                style={{ transitionDelay: `${index * 100}ms` }}
+          {/* Search Bar - Mobile */}
+          <form onSubmit={handleSearch} className="md:hidden pb-4">
+            <div className="relative">
+              <Input
+                type="text"
+                placeholder="Search for products..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-4 pr-12"
+              />
+              <button
+                type="submit"
+                className="absolute right-0 top-0 h-10 px-4 bg-trust-blue text-white rounded-r-md"
               >
-                <div className={`${feature.color} text-white w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-lg`}>
-                  {feature.icon}
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-                <p className="text-gray-600 leading-relaxed">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
+          </form>
 
-      {/* Products Section */}
-      <div className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4 flex items-center justify-center">
-              <ShoppingBag className="h-10 w-10 mr-3 text-pink-600" />
-              उपलब्ध उत्पाद
-            </h2>
-            <div className="w-24 h-1 bg-gradient-to-r from-pink-600 to-red-600 mx-auto mb-4"></div>
-            <p className="text-gray-600 text-lg">सभी उत्पाद हमारी महिला सदस्यों द्वारा निर्मित</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto" ref={productsRef.ref}>
-            {products.map((product, index) => (
-              <div
-                key={index}
-                className={`bg-gradient-to-br ${product.color} text-white p-6 rounded-2xl shadow-xl hover-scale transition-all duration-500 ${
-                  productsRef.isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-                }`}
-                style={{ transitionDelay: `${index * 150}ms` }}
+          {/* Categories Bar */}
+          <div className="hidden md:flex items-center space-x-6 py-3 border-t overflow-x-auto scrollbar-hide">
+            {categories.map((category) => (
+              <Link
+                key={category.id}
+                to={`/shop?category=${category.slug}`}
+                className="flex-shrink-0 font-semibold text-gray-700 hover:text-trust-blue transition-colors whitespace-nowrap"
               >
-                <div className="text-5xl mb-4">{product.icon}</div>
-                <h3 className="text-2xl font-bold mb-4">{product.category}</h3>
-                <ul className="space-y-2">
-                  {product.items.map((item, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <Check className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                {category.name}
+              </Link>
             ))}
-          </div>
-
-          <div className="mt-12 text-center">
-            <div className="bg-gradient-to-r from-pink-100 to-rose-100 p-6 rounded-xl max-w-3xl mx-auto border-2 border-pink-300 hover-lift">
-              <p className="text-gray-800 text-lg font-semibold">
-                ✨ और भी कई उपयोगी वस्तुएं उपलब्ध हैं!
-              </p>
-              <p className="text-gray-600 mt-2">
-                सभी उत्पाद 100% शुद्ध, देसी और बाजार से 30-40% सस्ते
-              </p>
-            </div>
+            <Link to="/shop" className="flex-shrink-0 font-semibold text-trust-blue flex items-center">
+              View All
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Link>
           </div>
         </div>
-      </div>
+      </nav>
 
-      {/* Membership Benefits Section */}
-      <div className="py-16 bg-gradient-to-br from-pink-600 to-rose-700 text-white">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <Award className="h-16 w-16 mx-auto mb-4 animate-float" />
-              <h2 className="text-4xl font-bold mb-4">सदस्यता कार्ड की विशेष सुविधा</h2>
-              <div className="w-24 h-1 bg-white mx-auto"></div>
+      {/* Mobile Menu */}
+      {showMobileMenu && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 md:hidden" onClick={() => setShowMobileMenu(false)}>
+          <div className="bg-white w-80 h-full shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-bold">Menu</h3>
+              <Button variant="ghost" size="icon" onClick={() => setShowMobileMenu(false)}>
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-
-            <div className="bg-white/10 backdrop-blur-sm p-8 rounded-2xl shadow-2xl border-2 border-white/30">
-              <div className="grid md:grid-cols-2 gap-8">
-                <div>
-                  <h3 className="text-2xl font-bold mb-6">सदस्यों को लाभ:</h3>
-                  <ul className="space-y-4">
-                    {membershipBenefits.map((benefit, index) => (
-                      <li key={index} className="flex items-start">
-                        <Star className="h-6 w-6 mr-3 flex-shrink-0 text-yellow-300" />
-                        <span className="text-lg">{benefit}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="bg-white text-gray-900 p-6 rounded-xl shadow-2xl hover-lift">
-                  <div className="text-center mb-4">
-                    <Gift className="h-12 w-12 mx-auto text-pink-600 mb-3" />
-                    <h4 className="text-2xl font-bold text-pink-600">बोनस स्कीम</h4>
-                  </div>
-                  <div className="space-y-3 text-center">
-                    <p className="text-lg">
-                      <strong>11 महीने</strong> लगातार
-                    </p>
-                    <p className="text-3xl font-bold text-pink-600">₹3,000</p>
-                    <p className="text-lg">प्रति माह खरीददारी</p>
-                    <div className="my-4 border-t-2 border-dashed border-pink-300"></div>
-                    <p className="text-lg">
-                      <strong>12वें महीने में पाएं</strong>
-                    </p>
-                    <p className="text-4xl font-bold text-green-600">₹3,000</p>
-                    <p className="text-xl font-semibold text-pink-600">बोनस कार्ड! 🎉</p>
-                  </div>
-                </div>
+            
+            <div className="p-4 space-y-4">
+              {user ? (
+                <>
+                  <Link to="/account/profile" className="block py-2 font-semibold" onClick={() => setShowMobileMenu(false)}>
+                    My Profile
+                  </Link>
+                  <Link to="/account/orders" className="block py-2 font-semibold" onClick={() => setShowMobileMenu(false)}>
+                    My Orders
+                  </Link>
+                  <Link to="/account/wishlist" className="block py-2 font-semibold" onClick={() => setShowMobileMenu(false)}>
+                    Wishlist
+                  </Link>
+                </>
+              ) : (
+                <Link to="/admin" className="block py-2 font-semibold" onClick={() => setShowMobileMenu(false)}>
+                  Login / Sign Up
+                </Link>
+              )}
+              
+              <div className="border-t pt-4">
+                <h4 className="font-bold mb-3">Categories</h4>
+                {categories.map((category) => (
+                  <Link
+                    key={category.id}
+                    to={`/shop?category=${category.slug}`}
+                    className="block py-2 text-gray-700"
+                    onClick={() => setShowMobileMenu(false)}
+                  >
+                    {category.name}
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* SHG Invitation Section */}
-      <div className="py-16 bg-white">
+      {/* Hero Banner */}
+      <section className="bg-gradient-to-r from-pink-600 via-rose-600 to-red-600 text-white py-16">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-8 rounded-2xl shadow-2xl hover-lift">
-              <div className="flex items-start space-x-4">
-                <Package className="h-12 w-12 flex-shrink-0" />
-                <div>
-                  <h3 className="text-3xl font-bold mb-4">SHG (स्वयं सहायता समूह) को आमंत्रण</h3>
-                  <p className="text-lg mb-4">
-                    जो स्वयं सहायता समूह पहले से उत्पाद तैयार कर रहे हैं, वे अपने नमूने भेज सकते हैं।
-                  </p>
-                  <p className="text-lg mb-6">
-                    मूल्यांकन के बाद उनसे <strong>उचित मूल्य</strong> पर उत्पाद खरीदकर मार्ट में रखा जाएगा।
-                  </p>
-                  <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
-                    <Button size="lg" className="bg-white text-green-600 hover:bg-green-50 font-bold hover-scale">
-                      <Phone className="mr-2 h-5 w-5" />
-                      अभी संपर्क करें
-                    </Button>
-                  </a>
-                </div>
+          <div className="grid md:grid-cols-2 gap-8 items-center">
+            <div>
+              <div className="inline-flex items-center bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mb-4">
+                <Gift className="h-4 w-4 mr-2" />
+                <span className="text-sm font-semibold">Special Offer • 30-40% OFF</span>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Distributor Section */}
-      <div className="py-16 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white p-8 rounded-2xl shadow-2xl hover-lift">
-              <div className="text-center">
-                <TrendingUp className="h-16 w-16 mx-auto mb-4 animate-float" />
-                <h3 className="text-3xl font-bold mb-4">डिस्ट्रीब्यूटर बनें</h3>
-                <p className="text-xl mb-6">
-                  हम डिस्ट्रीब्यूटर बना रहे हैं ताकि अधिक से अधिक लोगों तक हमारे उत्पाद पहुँच सकें।
-                </p>
-                <div className="grid md:grid-cols-3 gap-4 mb-8">
-                  <div className="bg-white/20 backdrop-blur-sm p-4 rounded-lg hover-scale">
-                    <p className="text-3xl font-bold mb-2">💰</p>
-                    <p className="font-semibold">अच्छी कमाई</p>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm p-4 rounded-lg hover-scale">
-                    <p className="text-3xl font-bold mb-2">🤝</p>
-                    <p className="font-semibold">पूर्ण सहयोग</p>
-                  </div>
-                  <div className="bg-white/20 backdrop-blur-sm p-4 rounded-lg hover-scale">
-                    <p className="text-3xl font-bold mb-2">📈</p>
-                    <p className="font-semibold">व्यवसाय वृद्धि</p>
-                  </div>
-                </div>
-                <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
-                  <Button size="lg" className="bg-white text-indigo-600 hover:bg-indigo-50 font-bold text-lg px-8 py-6 hover-scale">
-                    <Phone className="mr-2 h-5 w-5" />
-                    डिस्ट्रीब्यूटर के लिए संपर्क करें
+              <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">
+                देसी दीदी मार्ट में आपका स्वागत है
+              </h1>
+              <p className="text-xl mb-6 text-pink-100">
+                100% शुद्ध देसी उत्पाद • बाजार से 30-40% सस्ता • महिला सशक्तिकरण की पहल
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Link to="/shop">
+                  <Button size="lg" className="bg-white text-pink-600 hover:bg-pink-50 font-bold">
+                    <ShoppingCart className="mr-2 h-5 w-5" />
+                    Shop Now
                   </Button>
-                </a>
+                </Link>
+                <Link to="/about">
+                  <Button size="lg" variant="outline" className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-pink-600">
+                    Learn More
+                  </Button>
+                </Link>
+              </div>
+            </div>
+            <div className="hidden md:block">
+              <img
+                src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&h=400&fit=crop"
+                alt="Shopping"
+                className="rounded-2xl shadow-2xl"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Bar */}
+      <section className="bg-white py-4 border-b">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex items-center space-x-3">
+              <Truck className="h-8 w-8 text-trust-blue flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-sm">Free Delivery</p>
+                <p className="text-xs text-gray-600">On orders above ₹500</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Shield className="h-8 w-8 text-green-600 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-sm">100% Authentic</p>
+                <p className="text-xs text-gray-600">Pure desi products</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Gift className="h-8 w-8 text-pink-600 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-sm">Mega Discounts</p>
+                <p className="text-xs text-gray-600">30-40% off MRP</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Phone className="h-8 w-8 text-orange-600 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-sm">24/7 Support</p>
+                <p className="text-xs text-gray-600">Always here to help</p>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Online/Offline Section */}
-      <div className="py-16 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-4xl font-bold text-gray-900 mb-6">
-              ऑनलाइन + ऑफलाइन संचालन
-            </h2>
-            <div className="w-24 h-1 bg-gradient-to-r from-pink-600 to-red-600 mx-auto mb-8"></div>
-            
-            <div className="grid md:grid-cols-2 gap-8">
-              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-8 rounded-2xl shadow-lg border-2 border-blue-200 hover-lift">
-                <Store className="h-16 w-16 mx-auto mb-4 text-blue-600" />
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">ऑफलाइन स्टोर</h3>
-                <p className="text-gray-700 leading-relaxed">
-                  पंचायत, ब्लॉक और जिला स्तर पर भौतिक दुकानें जहां आप सीधे जाकर खरीददारी कर सकते हैं।
-                </p>
-              </div>
-
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-8 rounded-2xl shadow-lg border-2 border-purple-200 hover-lift">
-                <Globe className="h-16 w-16 mx-auto mb-4 text-purple-600" />
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">ऑनलाइन शॉपिंग</h3>
-                <p className="text-gray-700 leading-relaxed mb-4">
-                  वेबसाइट और मोबाइल ऐप के जरिए घर बैठे ऑर्डर करें और डिलीवरी प्राप्त करें।
-                </p>
-                <p className="text-sm text-gray-600 italic">
-                  (जल्द ही लॉन्च होने वाला है)
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* CTA Section */}
-      <div className="py-20 bg-gradient-to-r from-pink-600 via-rose-600 to-red-600 text-white">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-4xl md:text-5xl font-bold mb-6">
-              "देसी दीदी मार्ट – एक कदम आत्मनिर्भर भारत की ओर!"
-            </h2>
-            <p className="text-xl mb-8">
-              अगर आप इस शानदार योजना का हिस्सा बनना चाहते हैं या अपने उत्पाद बेचने/खरीदने के इच्छुक हैं, तो हमसे संपर्क करें:
-            </p>
-            
-            <div className="bg-white/20 backdrop-blur-sm p-8 rounded-2xl max-w-md mx-auto mb-8 hover-lift">
-              <Phone className="h-12 w-12 mx-auto mb-4 animate-float" />
-              <p className="text-lg mb-2">व्हाट्सएप पर संपर्क करें</p>
-              <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
-                <p className="text-4xl font-bold mb-4">7073741421</p>
-              </a>
-              <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
-                <Button size="lg" className="bg-white text-pink-600 hover:bg-pink-50 font-bold hover-scale">
-                  <ArrowRight className="mr-2 h-5 w-5" />
-                  WhatsApp पर मैसेज करें
-                </Button>
-              </a>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/join">
-                <Button size="lg" className="bg-white text-pink-600 hover:bg-pink-50 font-bold px-8 hover-scale">
-                  सदस्य बनें
-                </Button>
-              </Link>
-              <Link to="/about">
-                <Button size="lg" variant="outline" className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-pink-600 font-bold px-8 hover-scale">
-                  ट्रस्ट के बारे में जानें
+      {/* Categories Section */}
+      {categories.length > 0 && (
+        <section className="py-12 bg-gray-50">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-3xl font-bold text-gray-900">Shop by Category</h2>
+              <Link to="/shop">
+                <Button variant="outline" className="hidden md:flex">
+                  View All
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
             </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {categories.map((category) => (
+                <Link
+                  key={category.id}
+                  to={`/shop?category=${category.slug}`}
+                  className="bg-white p-6 rounded-xl shadow-sm hover:shadow-lg transition-all group text-center"
+                >
+                  <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-pink-100 to-rose-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Package className="h-10 w-10 text-pink-600" />
+                  </div>
+                  <h3 className="font-semibold text-gray-900 group-hover:text-trust-blue transition-colors">
+                    {category.name}
+                  </h3>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Featured Products */}
+      {featuredProducts.length > 0 && (
+        <section className="py-12 bg-white">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center space-x-3">
+                <Zap className="h-8 w-8 text-yellow-500" />
+                <h2 className="text-3xl font-bold text-gray-900">Featured Products</h2>
+              </div>
+              <Link to="/shop?featured=true">
+                <Button variant="outline" className="hidden md:flex">
+                  View All
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {featuredProducts.slice(0, 8).map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Bestsellers */}
+      {bestsellerProducts.length > 0 && (
+        <section className="py-12 bg-gray-50">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center space-x-3">
+                <TrendingUp className="h-8 w-8 text-green-600" />
+                <h2 className="text-3xl font-bold text-gray-900">Bestsellers</h2>
+              </div>
+              <Link to="/shop?bestseller=true">
+                <Button variant="outline" className="hidden md:flex">
+                  View All
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {bestsellerProducts.slice(0, 8).map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Info Banner */}
+      <section className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white py-16">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Why Choose Desi Didi Mart?
+            </h2>
+            <div className="grid md:grid-cols-3 gap-8 mt-8">
+              <div className="bg-white/10 backdrop-blur-sm p-6 rounded-xl">
+                <Shield className="h-12 w-12 mx-auto mb-4" />
+                <h3 className="text-xl font-bold mb-2">100% Authentic</h3>
+                <p className="text-white/90">All products are pure and desi</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm p-6 rounded-xl">
+                <Gift className="h-12 w-12 mx-auto mb-4" />
+                <h3 className="text-xl font-bold mb-2">Best Prices</h3>
+                <p className="text-white/90">30-40% cheaper than market</p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-sm p-6 rounded-xl">
+                <Heart className="h-12 w-12 mx-auto mb-4" />
+                <h3 className="text-xl font-bold mb-2">Women Empowerment</h3>
+                <p className="text-white/90">Supporting local women artisans</p>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Footer CTA */}
+      <section className="bg-white py-12 border-t">
+        <div className="container mx-auto px-4 text-center">
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">
+            Ready to Start Shopping?
+          </h3>
+          <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+            Explore our wide range of authentic desi products at unbeatable prices. Join thousands of satisfied customers!
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link to="/shop">
+              <Button size="lg" className="bg-trust-blue hover:bg-blue-700">
+                <ShoppingCart className="mr-2 h-5 w-5" />
+                Browse Products
+              </Button>
+            </Link>
+            <a href="https://wa.me/917073741421" target="_blank" rel="noopener noreferrer">
+              <Button size="lg" variant="outline">
+                <Phone className="mr-2 h-5 w-5" />
+                Contact Us
+              </Button>
+            </a>
+          </div>
+        </div>
+      </section>
     </div>
   );
 };
