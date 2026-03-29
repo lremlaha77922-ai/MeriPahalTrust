@@ -21,6 +21,7 @@ import CoordinatorPortal from '@/pages/CoordinatorPortal';
 import MobileCoordinatorApp from '@/pages/MobileCoordinatorApp';
 import MobileSurveyApp from '@/pages/MobileSurveyApp';
 import Gallery from '@/pages/Gallery';
+import Shop from '@/pages/Shop';
 import NotFound from '@/pages/NotFound';
 
 // Guideline Pages
@@ -56,6 +57,7 @@ function App() {
             <Route path="/about" element={<About />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/desi-didi-mart" element={<DesiDidiMart />} />
+            <Route path="/shop" element={<Shop />} />
             <Route path="/swastha-sangini" element={<SwasthaSangini />} />
             <Route path="/swastha-sangini/apply" element={<SwasthaSanginiApply />} />
             <Route path="/swastha-sangini/success" element={<SwasthaSanginiSuccess />} />
