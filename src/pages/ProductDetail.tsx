@@ -7,7 +7,8 @@ import {
   ChevronRight, Star, Heart, ShoppingCart, Share2, Truck, RefreshCw,
   Shield, Check, X, ZoomIn, ChevronLeft, ChevronRight as ChevronRightIcon,
   MapPin, Calendar, Package, Facebook, Twitter, Linkedin, Copy,
-  ThumbsUp, User, AlertCircle, Plus, Minus, Maximize2
+  ThumbsUp, User, AlertCircle, Plus, Minus, Maximize2, TrendingUp, Filter,
+  Zap, TrendingDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +102,11 @@ const ProductDetail = () => {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasPurchased, setHasPurchased] = useState(false);
   const [userReview, setUserReview] = useState<Review | null>(null);
+  
+  // Rating filter states
+  const [ratingFilter, setRatingFilter] = useState<number | null>(null);
+  const [verifiedOnlyFilter, setVerifiedOnlyFilter] = useState(false);
+  const [filteredReviewsByRating, setFilteredReviewsByRating] = useState<Review[]>([]);
 
   const imageRef = useRef<HTMLImageElement>(null);
   const [zoomPosition, setZoomPosition] = useState({ x: 0, y: 0 });
@@ -124,6 +130,10 @@ const ProductDetail = () => {
       addToRecentlyViewed();
     }
   }, [product, user]);
+
+  useEffect(() => {
+    applyReviewFilters();
+  }, [reviews, ratingFilter, verifiedOnlyFilter]);
 
   const trackProductView = async () => {
     if (!slug) return;
@@ -181,8 +191,8 @@ const ProductDetail = () => {
         user_profile:user_profiles(username)
       `)
       .eq('product_id', product.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false });
 
     if (data) setReviews(data);
   };
@@ -225,6 +235,74 @@ const ProductDetail = () => {
       .single();
 
     if (data) setUserReview(data);
+  };
+
+  const applyReviewFilters = () => {
+    let filtered = [...reviews];
+
+    // Filter by rating
+    if (ratingFilter !== null) {
+      filtered = filtered.filter(review => review.rating === ratingFilter);
+    }
+
+    // Filter by verified purchase
+    if (verifiedOnlyFilter) {
+      filtered = filtered.filter(review => review.is_verified);
+    }
+
+    setFilteredReviewsByRating(filtered);
+  };
+
+  const getRatingDistribution = () => {
+    const distribution = [5, 4, 3, 2, 1].map(rating => {
+      const ratingReviews = reviews.filter(r => r.rating === rating);
+      const verifiedRatingReviews = ratingReviews.filter(r => r.is_verified);
+      
+      return {
+        rating,
+        count: ratingReviews.length,
+        verifiedCount: verifiedRatingReviews.length,
+        percentage: reviews.length > 0 ? (ratingReviews.length / reviews.length) * 100 : 0,
+        verifiedPercentage: reviews.filter(r => r.is_verified).length > 0 
+          ? (verifiedRatingReviews.length / reviews.filter(r => r.is_verified).length) * 100 
+          : 0,
+      };
+    });
+
+    return distribution;
+  };
+
+  const getRatingTrend = () => {
+    if (reviews.length < 2) return { trend: 'stable', change: 0 };
+
+    // Split reviews into recent (last 30 days) and older
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const recentReviews = reviews.filter(r => new Date(r.created_at) >= thirtyDaysAgo);
+    const olderReviews = reviews.filter(r => new Date(r.created_at) < thirtyDaysAgo);
+
+    if (recentReviews.length === 0 || olderReviews.length === 0) {
+      return { trend: 'stable', change: 0 };
+    }
+
+    const recentAvg = recentReviews.reduce((sum, r) => sum + r.rating, 0) / recentReviews.length;
+    const olderAvg = olderReviews.reduce((sum, r) => sum + r.rating, 0) / olderReviews.length;
+    const change = recentAvg - olderAvg;
+
+    let trend: 'improving' | 'declining' | 'stable' = 'stable';
+    if (change > 0.2) trend = 'improving';
+    else if (change < -0.2) trend = 'declining';
+
+    return { trend, change };
+  };
+
+  const handleRatingFilterClick = (rating: number) => {
+    if (ratingFilter === rating) {
+      setRatingFilter(null); // Deselect if already selected
+    } else {
+      setRatingFilter(rating);
+    }
   };
 
   const addToRecentlyViewed = () => {
@@ -917,69 +995,274 @@ const ProductDetail = () => {
                 )}
               </div>
             ) : (
-              <div className="space-y-6">
-                {reviews.map((review) => (
-                  <div key={review.id} className="border-b pb-6 last:border-0">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                          <User className="h-5 w-5 text-gray-600" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">
-                            {review.user_profile?.username || 'Anonymous'}
-                          </p>
-                          <div className="flex items-center space-x-2">
-                            <div className="flex">
-                              {[...Array(5)].map((_, i) => (
-                                <Star
-                                  key={i}
-                                  className={`h-4 w-4 ${
-                                    i < review.rating
-                                      ? 'fill-yellow-400 text-yellow-400'
-                                      : 'text-gray-300'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            {review.is_verified && (
-                              <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                                Verified Purchase
-                              </span>
-                            )}
-                          </div>
-                        </div>
+              <div className="grid lg:grid-cols-3 gap-8">
+                {/* Rating Breakdown Sidebar */}
+                <div className="lg:col-span-1">
+                  <div className="bg-gray-50 rounded-lg p-6 sticky top-24">
+                    {/* Overall Rating */}
+                    <div className="text-center mb-6 pb-6 border-b">
+                      <div className="text-5xl font-bold text-gray-900 mb-2">
+                        {product.average_rating.toFixed(1)}
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {new Date(review.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    {review.title && (
-                      <h4 className="font-semibold text-gray-900 mb-2">{review.title}</h4>
-                    )}
-                    
-                    <p className="text-gray-700 mb-3">{review.comment}</p>
-
-                    {review.images && review.images.length > 0 && (
-                      <div className="flex gap-2 mb-3">
-                        {review.images.map((img, idx) => (
-                          <img
-                            key={idx}
-                            src={img}
-                            alt={`Review ${idx + 1}`}
-                            className="w-20 h-20 object-cover rounded"
+                      <div className="flex items-center justify-center mb-2">
+                        {[...Array(5)].map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`h-5 w-5 ${
+                              i < Math.round(product.average_rating)
+                                ? 'fill-yellow-400 text-yellow-400'
+                                : 'text-gray-300'
+                            }`}
                           />
                         ))}
                       </div>
-                    )}
+                      <p className="text-sm text-gray-600">
+                        Based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+                      </p>
+                      {reviews.filter(r => r.is_verified).length > 0 && (
+                        <p className="text-xs text-green-600 mt-1">
+                          {reviews.filter(r => r.is_verified).length} verified purchase{reviews.filter(r => r.is_verified).length !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </div>
 
-                    <button className="flex items-center space-x-2 text-sm text-gray-600 hover:text-trust-blue">
-                      <ThumbsUp className="h-4 w-4" />
-                      <span>Helpful ({review.helpful_count})</span>
-                    </button>
+                    {/* Rating Trend */}
+                    {(() => {
+                      const { trend, change } = getRatingTrend();
+                      return trend !== 'stable' && (
+                        <div className={`mb-6 pb-6 border-b flex items-center justify-center space-x-2 ${
+                          trend === 'improving' ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {trend === 'improving' ? (
+                            <TrendingUp className="h-5 w-5" />
+                          ) : (
+                            <TrendingDown className="h-5 w-5" />
+                          )}
+                          <span className="font-semibold text-sm">
+                            {trend === 'improving' ? 'Improving' : 'Declining'} trend
+                          </span>
+                          <span className="text-xs">
+                            ({change > 0 ? '+' : ''}{change.toFixed(2)} in last 30 days)
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Rating Distribution */}
+                    <div className="space-y-3 mb-6">
+                      <h3 className="font-semibold text-gray-900 mb-3">Rating Distribution</h3>
+                      {getRatingDistribution().map(({ rating, count, verifiedCount, percentage, verifiedPercentage }) => {
+                        const displayPercentage = verifiedOnlyFilter ? verifiedPercentage : percentage;
+                        const displayCount = verifiedOnlyFilter ? verifiedCount : count;
+                        const isSelected = ratingFilter === rating;
+                        
+                        return (
+                          <button
+                            key={rating}
+                            onClick={() => handleRatingFilterClick(rating)}
+                            className={`w-full flex items-center space-x-3 hover:bg-white rounded-lg p-2 transition-colors ${
+                              isSelected ? 'bg-white shadow-sm ring-2 ring-trust-blue' : ''
+                            }`}
+                          >
+                            <div className="flex items-center space-x-1 w-16">
+                              <span className="text-sm font-semibold text-gray-700">{rating}</span>
+                              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            </div>
+                            
+                            <div className="flex-1">
+                              <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                <div
+                                  className={`h-2 rounded-full transition-all ${
+                                    isSelected ? 'bg-trust-blue' : 'bg-yellow-400'
+                                  }`}
+                                  style={{ width: `${displayPercentage}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                            
+                            <div className="text-right min-w-[60px]">
+                              <div className="text-xs font-semibold text-gray-900">
+                                {displayPercentage.toFixed(0)}%
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                ({displayCount})
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Verified Purchase Toggle */}
+                    <div className="pt-4 border-t">
+                      <button
+                        onClick={() => setVerifiedOnlyFilter(!verifiedOnlyFilter)}
+                        className={`w-full flex items-center justify-between p-3 rounded-lg border-2 transition-all ${
+                          verifiedOnlyFilter
+                            ? 'border-green-500 bg-green-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Shield className={`h-5 w-5 ${verifiedOnlyFilter ? 'text-green-600' : 'text-gray-400'}`} />
+                          <span className={`text-sm font-semibold ${
+                            verifiedOnlyFilter ? 'text-green-900' : 'text-gray-700'
+                          }`}>
+                            Verified Purchases Only
+                          </span>
+                        </div>
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                          verifiedOnlyFilter
+                            ? 'border-green-600 bg-green-600'
+                            : 'border-gray-300'
+                        }`}>
+                          {verifiedOnlyFilter && <Check className="h-3 w-3 text-white" />}
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Active Filters */}
+                    {(ratingFilter !== null || verifiedOnlyFilter) && (
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-gray-600">Active Filters:</span>
+                          <button
+                            onClick={() => {
+                              setRatingFilter(null);
+                              setVerifiedOnlyFilter(false);
+                            }}
+                            className="text-xs text-trust-blue hover:underline"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {ratingFilter !== null && (
+                            <span className="inline-flex items-center px-3 py-1 bg-trust-blue text-white rounded-full text-xs">
+                              {ratingFilter} Star
+                              <button
+                                onClick={() => setRatingFilter(null)}
+                                className="ml-2 hover:text-gray-200"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          )}
+                          {verifiedOnlyFilter && (
+                            <span className="inline-flex items-center px-3 py-1 bg-green-600 text-white rounded-full text-xs">
+                              Verified Only
+                              <button
+                                onClick={() => setVerifiedOnlyFilter(false)}
+                                className="ml-2 hover:text-gray-200"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                </div>
+
+                {/* Reviews List */}
+                <div className="lg:col-span-2 space-y-6">
+                  {filteredReviewsByRating.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg">
+                      <Filter className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">No Reviews Found</h3>
+                      <p className="text-gray-500 mb-4">
+                        No reviews match your current filters
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setRatingFilter(null);
+                          setVerifiedOnlyFilter(false);
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                        <span className="text-sm text-gray-600">
+                          Showing {filteredReviewsByRating.length} of {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+                        </span>
+                        {(ratingFilter !== null || verifiedOnlyFilter) && (
+                          <span className="text-xs text-trust-blue font-semibold">
+                            Filtered results
+                          </span>
+                        )}
+                      </div>
+
+                      {filteredReviewsByRating.map((review) => (
+                        <div key={review.id} className="border-b pb-6 last:border-0">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                                <User className="h-5 w-5 text-gray-600" />
+                              </div>
+                              <div>
+                                <p className="font-semibold text-gray-900">
+                                  {review.user_profile?.username || 'Anonymous'}
+                                </p>
+                                <div className="flex items-center space-x-2">
+                                  <div className="flex">
+                                    {[...Array(5)].map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`h-4 w-4 ${
+                                          i < review.rating
+                                            ? 'fill-yellow-400 text-yellow-400'
+                                            : 'text-gray-300'
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                  {review.is_verified && (
+                                    <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded flex items-center">
+                                      <Shield className="h-3 w-3 mr-1" />
+                                      Verified Purchase
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-sm text-gray-500">
+                              {new Date(review.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+
+                          {review.title && (
+                            <h4 className="font-semibold text-gray-900 mb-2">{review.title}</h4>
+                          )}
+                          
+                          <p className="text-gray-700 mb-3">{review.comment}</p>
+
+                          {review.images && review.images.length > 0 && (
+                            <div className="flex gap-2 mb-3">
+                              {review.images.map((img, idx) => (
+                                <img
+                                  key={idx}
+                                  src={img}
+                                  alt={`Review ${idx + 1}`}
+                                  className="w-20 h-20 object-cover rounded"
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          <button className="flex items-center space-x-2 text-sm text-gray-600 hover:text-trust-blue">
+                            <ThumbsUp className="h-4 w-4" />
+                            <span>Helpful ({review.helpful_count})</span>
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
