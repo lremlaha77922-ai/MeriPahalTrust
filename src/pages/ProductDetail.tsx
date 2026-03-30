@@ -8,7 +8,7 @@ import {
   Shield, Check, X, ZoomIn, ChevronLeft, ChevronRight as ChevronRightIcon,
   MapPin, Calendar, Package, Facebook, Twitter, Linkedin, Copy,
   ThumbsUp, User, AlertCircle, Plus, Minus, Maximize2, TrendingUp, Filter,
-  Zap, TrendingDown
+  Zap, TrendingDown, Upload, Image as ImageIcon, Video, Trash2, PlayCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 
 interface Product {
   id: string;
@@ -68,12 +69,22 @@ interface Review {
   title: string;
   comment: string;
   images: string[];
+  videos: string[];
   is_verified: boolean;
   helpful_count: number;
   created_at: string;
   user_profile?: {
     username: string;
   };
+}
+
+interface MediaFile {
+  file: File;
+  preview: string;
+  type: 'image' | 'video';
+  uploading: boolean;
+  progress: number;
+  url?: string;
 }
 
 const ProductDetail = () => {
@@ -89,6 +100,8 @@ const ProductDetail = () => {
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [pincode, setPincode] = useState('');
@@ -102,6 +115,11 @@ const ProductDetail = () => {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasPurchased, setHasPurchased] = useState(false);
   const [userReview, setUserReview] = useState<Review | null>(null);
+  
+  // Media upload
+  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Rating filter states
   const [ratingFilter, setRatingFilter] = useState<number | null>(null);
@@ -218,7 +236,6 @@ const ProductDetail = () => {
       .from('order_items')
       .select('id')
       .eq('product_id', product.id)
-      .eq('order_id', supabase.sql`(SELECT id FROM orders WHERE user_id = ${user.id})`)
       .limit(1);
 
     setHasPurchased(!!data && data.length > 0);
@@ -275,7 +292,6 @@ const ProductDetail = () => {
   const getRatingTrend = () => {
     if (reviews.length < 2) return { trend: 'stable', change: 0 };
 
-    // Split reviews into recent (last 30 days) and older
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -299,7 +315,7 @@ const ProductDetail = () => {
 
   const handleRatingFilterClick = (rating: number) => {
     if (ratingFilter === rating) {
-      setRatingFilter(null); // Deselect if already selected
+      setRatingFilter(null);
     } else {
       setRatingFilter(rating);
     }
@@ -315,12 +331,260 @@ const ProductDetail = () => {
     localStorage.setItem(recentKey, JSON.stringify(filtered.slice(0, 10)));
   };
 
+  // Media Upload Functions
+  const validateFile = (file: File): string | null => {
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+
+    if (!isImage && !isVideo) {
+      return 'Only images and videos are allowed';
+    }
+
+    const maxImageSize = 5 * 1024 * 1024; // 5MB
+    const maxVideoSize = 50 * 1024 * 1024; // 50MB
+
+    if (isImage && file.size > maxImageSize) {
+      return 'Image size must be less than 5MB';
+    }
+
+    if (isVideo && file.size > maxVideoSize) {
+      return 'Video size must be less than 50MB';
+    }
+
+    const imageCount = mediaFiles.filter(f => f.type === 'image').length;
+    const videoCount = mediaFiles.filter(f => f.type === 'video').length;
+
+    if (isImage && imageCount >= 5) {
+      return 'Maximum 5 images allowed';
+    }
+
+    if (isVideo && videoCount >= 2) {
+      return 'Maximum 2 videos allowed';
+    }
+
+    return null;
+  };
+
+  const generateVideoThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      video.preload = 'metadata';
+      video.src = URL.createObjectURL(file);
+
+      video.onloadeddata = () => {
+        video.currentTime = 1; // Seek to 1 second
+      };
+
+      video.onseeked = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob(blob => {
+          if (blob) {
+            resolve(URL.createObjectURL(blob));
+          } else {
+            reject('Failed to generate thumbnail');
+          }
+          URL.revokeObjectURL(video.src);
+        }, 'image/jpeg', 0.7);
+      };
+
+      video.onerror = () => {
+        reject('Failed to load video');
+        URL.revokeObjectURL(video.src);
+      };
+    });
+  };
+
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const newFiles: MediaFile[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const error = validateFile(file);
+
+      if (error) {
+        toast.error(error);
+        continue;
+      }
+
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      let preview = '';
+      
+      if (isImage) {
+        preview = URL.createObjectURL(file);
+      } else if (isVideo) {
+        try {
+          preview = await generateVideoThumbnail(file);
+        } catch (err) {
+          console.error('Thumbnail generation failed:', err);
+          preview = ''; // Use default video icon
+        }
+      }
+
+      newFiles.push({
+        file,
+        preview,
+        type: isImage ? 'image' : 'video',
+        uploading: false,
+        progress: 0,
+      });
+    }
+
+    setMediaFiles(prev => [...prev, ...newFiles]);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelect(e.dataTransfer.files);
+  };
+
+  const removeMediaFile = (index: number) => {
+    setMediaFiles(prev => {
+      const newFiles = [...prev];
+      URL.revokeObjectURL(newFiles[index].preview);
+      newFiles.splice(index, 1);
+      return newFiles;
+    });
+  };
+
+  const uploadMediaFiles = async (): Promise<{ images: string[], videos: string[] }> => {
+    const uploadedImages: string[] = [];
+    const uploadedVideos: string[] = [];
+
+    for (let i = 0; i < mediaFiles.length; i++) {
+      const media = mediaFiles[i];
+      
+      setMediaFiles(prev => {
+        const updated = [...prev];
+        updated[i] = { ...updated[i], uploading: true, progress: 0 };
+        return updated;
+      });
+
+      try {
+        const fileExt = media.file.name.split('.').pop();
+        const fileName = `${user!.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `review-media/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('review-media')
+          .upload(filePath, media.file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('review-media')
+          .getPublicUrl(filePath);
+
+        if (media.type === 'image') {
+          uploadedImages.push(publicUrl);
+        } else {
+          uploadedVideos.push(publicUrl);
+        }
+
+        setMediaFiles(prev => {
+          const updated = [...prev];
+          updated[i] = { ...updated[i], progress: 100, url: publicUrl };
+          return updated;
+        });
+      } catch (error: any) {
+        console.error('Upload error:', error);
+        toast.error(`Failed to upload ${media.file.name}`);
+        throw error;
+      }
+    }
+
+    return { images: uploadedImages, videos: uploadedVideos };
+  };
+
+  const submitReview = async () => {
+    if (!user) {
+      toast.error('Please login to write a review');
+      return;
+    }
+
+    if (!reviewComment.trim()) {
+      toast.error('Please write a review');
+      return;
+    }
+
+    try {
+      setSubmittingReview(true);
+
+      // Upload media files
+      let images: string[] = [];
+      let videos: string[] = [];
+
+      if (mediaFiles.length > 0) {
+        const uploaded = await uploadMediaFiles();
+        images = uploaded.images;
+        videos = uploaded.videos;
+      }
+
+      const { error } = await supabase
+        .from('product_reviews')
+        .insert({
+          user_id: user.id,
+          product_id: product!.id,
+          rating: reviewRating,
+          title: reviewTitle,
+          comment: reviewComment,
+          images,
+          videos,
+          is_verified: hasPurchased,
+        });
+
+      if (error) throw error;
+
+      toast.success('Review submitted successfully!');
+      setReviewDialogOpen(false);
+      setReviewTitle('');
+      setReviewComment('');
+      setReviewRating(5);
+      setMediaFiles([]);
+      fetchReviews();
+      fetchUserReview();
+      fetchProduct();
+    } catch (error: any) {
+      console.error('Submit review error:', error);
+      toast.error('Failed to submit review');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const openLightbox = (images: string[], startIndex: number = 0) => {
+    setLightboxImages(images);
+    setLightboxIndex(startIndex);
+    setLightboxOpen(true);
+  };
+
   const calculateFinalPrice = () => {
     if (!product) return 0;
     
     let finalPrice = product.price;
     
-    // Apply variant price adjustments
     if (product.variants && product.variants.length > 0) {
       product.variants.forEach((variant: any) => {
         const selectedValue = selectedVariants[variant.type];
@@ -337,12 +601,10 @@ const ProductDetail = () => {
   const getCurrentStock = () => {
     if (!product) return 0;
     
-    // If no variants, return base stock
     if (!product.variants || product.variants.length === 0) {
       return product.stock_quantity;
     }
     
-    // Check stock for selected variant
     let stock = product.stock_quantity;
     product.variants.forEach((variant: any) => {
       const selectedValue = selectedVariants[variant.type];
@@ -457,9 +719,8 @@ const ProductDetail = () => {
 
     setCheckingPincode(true);
     
-    // Simulate delivery check (in production, integrate with shipping API)
     setTimeout(() => {
-      const days = Math.floor(Math.random() * 5) + 3; // 3-7 days
+      const days = Math.floor(Math.random() * 5) + 3;
       const deliveryDate = new Date();
       deliveryDate.setDate(deliveryDate.getDate() + days);
       
@@ -471,48 +732,6 @@ const ProductDetail = () => {
       setCheckingPincode(false);
       toast.success(`Delivery available to ${pincode}`);
     }, 1000);
-  };
-
-  const submitReview = async () => {
-    if (!user) {
-      toast.error('Please login to write a review');
-      return;
-    }
-
-    if (!reviewComment.trim()) {
-      toast.error('Please write a review');
-      return;
-    }
-
-    try {
-      setSubmittingReview(true);
-      const { error } = await supabase
-        .from('product_reviews')
-        .insert({
-          user_id: user.id,
-          product_id: product!.id,
-          rating: reviewRating,
-          title: reviewTitle,
-          comment: reviewComment,
-          is_verified: hasPurchased,
-        });
-
-      if (error) throw error;
-
-      toast.success('Review submitted successfully!');
-      setReviewDialogOpen(false);
-      setReviewTitle('');
-      setReviewComment('');
-      setReviewRating(5);
-      fetchReviews();
-      fetchUserReview();
-      fetchProduct(); // Refresh to update ratings
-    } catch (error: any) {
-      console.error('Submit review error:', error);
-      toast.error('Failed to submit review');
-    } finally {
-      setSubmittingReview(false);
-    }
   };
 
   const shareProduct = (platform: string) => {
@@ -590,12 +809,10 @@ const ProductDetail = () => {
         </div>
       </section>
 
-      {/* Product Details */}
+      {/* Product Details - Rest of the component remains mostly the same until Review Dialog */}
       <section className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-2 gap-8 mb-12">
-          {/* Image Gallery */}
           <div className="space-y-4">
-            {/* Main Image */}
             <div 
               className="relative bg-white rounded-lg overflow-hidden shadow-lg group"
               onMouseMove={handleImageZoom}
@@ -618,7 +835,7 @@ const ProductDetail = () => {
               />
               
               <button
-                onClick={() => setLightboxOpen(true)}
+                onClick={() => openLightbox(product.images, currentImageIndex)}
                 className="absolute top-4 right-4 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Maximize2 className="h-5 w-5 text-gray-700" />
@@ -648,7 +865,6 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Thumbnail Images */}
             {product.images.length > 1 && (
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {product.images.map((image, index) => (
@@ -672,9 +888,7 @@ const ProductDetail = () => {
             )}
           </div>
 
-          {/* Product Info */}
           <div className="space-y-6">
-            {/* Title & Brand */}
             <div>
               {product.brand && (
                 <p className="text-gray-600 mb-2">
@@ -687,7 +901,6 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Rating */}
             {product.average_rating > 0 && (
               <div className="flex items-center space-x-3">
                 <div className="flex items-center bg-green-600 text-white px-3 py-1 rounded font-semibold">
@@ -700,7 +913,6 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {/* Price */}
             <div className="border-t border-b py-4">
               <div className="flex items-baseline space-x-3 mb-2">
                 <span className="text-4xl font-bold text-gray-900">
@@ -720,7 +932,6 @@ const ProductDetail = () => {
               <p className="text-sm text-gray-600">Inclusive of all taxes</p>
             </div>
 
-            {/* Variants */}
             {product.variants && product.variants.length > 0 && (
               <div className="space-y-4">
                 {product.variants.map((variant: any) => (
@@ -757,7 +968,6 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {/* Stock Status */}
             <div className={`flex items-center space-x-2 ${
               currentStock === 0 ? 'text-red-600' : currentStock < 10 ? 'text-orange-600' : 'text-green-600'
             }`}>
@@ -779,7 +989,6 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Quantity Selector */}
             {currentStock > 0 && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -812,7 +1021,6 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {/* Action Buttons */}
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <Button
@@ -855,7 +1063,6 @@ const ProductDetail = () => {
               </div>
             </div>
 
-            {/* Delivery Check */}
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-3">
                 <Truck className="h-5 w-5 text-trust-blue" />
@@ -889,7 +1096,6 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Features */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-start space-x-3">
                 <Truck className="h-5 w-5 text-trust-blue flex-shrink-0 mt-0.5" />
@@ -925,7 +1131,6 @@ const ProductDetail = () => {
 
         {/* Tabs Section */}
         <div className="bg-white rounded-lg shadow-sm">
-          {/* Description */}
           <div className="border-b p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Product Description</h2>
             <div className="prose max-w-none text-gray-700">
@@ -933,7 +1138,6 @@ const ProductDetail = () => {
             </div>
           </div>
 
-          {/* Specifications */}
           {product.specifications && Object.keys(product.specifications).length > 0 && (
             <div className="border-b p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Specifications</h2>
@@ -950,7 +1154,6 @@ const ProductDetail = () => {
             </div>
           )}
 
-          {/* Return Policy */}
           <div className="border-b p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Return & Exchange Policy</h2>
             <div className="space-y-3 text-gray-700">
@@ -996,10 +1199,8 @@ const ProductDetail = () => {
               </div>
             ) : (
               <div className="grid lg:grid-cols-3 gap-8">
-                {/* Rating Breakdown Sidebar */}
                 <div className="lg:col-span-1">
                   <div className="bg-gray-50 rounded-lg p-6 sticky top-24">
-                    {/* Overall Rating */}
                     <div className="text-center mb-6 pb-6 border-b">
                       <div className="text-5xl font-bold text-gray-900 mb-2">
                         {product.average_rating.toFixed(1)}
@@ -1026,7 +1227,6 @@ const ProductDetail = () => {
                       )}
                     </div>
 
-                    {/* Rating Trend */}
                     {(() => {
                       const { trend, change } = getRatingTrend();
                       return trend !== 'stable' && (
@@ -1048,7 +1248,6 @@ const ProductDetail = () => {
                       );
                     })()}
 
-                    {/* Rating Distribution */}
                     <div className="space-y-3 mb-6">
                       <h3 className="font-semibold text-gray-900 mb-3">Rating Distribution</h3>
                       {getRatingDistribution().map(({ rating, count, verifiedCount, percentage, verifiedPercentage }) => {
@@ -1093,7 +1292,6 @@ const ProductDetail = () => {
                       })}
                     </div>
 
-                    {/* Verified Purchase Toggle */}
                     <div className="pt-4 border-t">
                       <button
                         onClick={() => setVerifiedOnlyFilter(!verifiedOnlyFilter)}
@@ -1121,7 +1319,6 @@ const ProductDetail = () => {
                       </button>
                     </div>
 
-                    {/* Active Filters */}
                     {(ratingFilter !== null || verifiedOnlyFilter) && (
                       <div className="mt-4 pt-4 border-t">
                         <div className="flex items-center justify-between mb-2">
@@ -1165,7 +1362,6 @@ const ProductDetail = () => {
                   </div>
                 </div>
 
-                {/* Reviews List */}
                 <div className="lg:col-span-2 space-y-6">
                   {filteredReviewsByRating.length === 0 ? (
                     <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -1241,15 +1437,32 @@ const ProductDetail = () => {
                           
                           <p className="text-gray-700 mb-3">{review.comment}</p>
 
-                          {review.images && review.images.length > 0 && (
-                            <div className="flex gap-2 mb-3">
-                              {review.images.map((img, idx) => (
-                                <img
-                                  key={idx}
-                                  src={img}
-                                  alt={`Review ${idx + 1}`}
-                                  className="w-20 h-20 object-cover rounded"
-                                />
+                          {((review.images && review.images.length > 0) || (review.videos && review.videos.length > 0)) && (
+                            <div className="flex gap-2 mb-3 flex-wrap">
+                              {review.images?.map((img, idx) => (
+                                <button
+                                  key={`img-${idx}`}
+                                  onClick={() => openLightbox([...review.images, ...review.videos], idx)}
+                                  className="relative w-24 h-24 rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+                                >
+                                  <img
+                                    src={img}
+                                    alt={`Review ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              ))}
+                              {review.videos?.map((video, idx) => (
+                                <button
+                                  key={`video-${idx}`}
+                                  onClick={() => openLightbox([...review.images, ...review.videos], review.images.length + idx)}
+                                  className="relative w-24 h-24 rounded-lg overflow-hidden hover:opacity-90 transition-opacity bg-gray-900"
+                                >
+                                  <video src={video} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <PlayCircle className="h-10 w-10 text-white opacity-80" />
+                                  </div>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -1268,7 +1481,6 @@ const ProductDetail = () => {
           </div>
         </div>
 
-        {/* Related Products */}
         {relatedProducts.length > 0 && (
           <div className="mt-12">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Similar Products</h2>
@@ -1303,23 +1515,32 @@ const ProductDetail = () => {
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] p-0">
           <div className="relative">
-            <img
-              src={product.images[currentImageIndex] || 'https://via.placeholder.com/800'}
-              alt={product.name}
-              className="w-full h-auto max-h-[85vh] object-contain"
-            />
+            {lightboxImages[lightboxIndex]?.endsWith('.mp4') || lightboxImages[lightboxIndex]?.includes('/video/') ? (
+              <video
+                src={lightboxImages[lightboxIndex]}
+                controls
+                autoPlay
+                className="w-full h-auto max-h-[85vh] object-contain bg-black"
+              />
+            ) : (
+              <img
+                src={lightboxImages[lightboxIndex] || 'https://via.placeholder.com/800'}
+                alt="Review media"
+                className="w-full h-auto max-h-[85vh] object-contain"
+              />
+            )}
             
-            {product.images.length > 1 && (
+            {lightboxImages.length > 1 && (
               <>
                 <button
-                  onClick={() => setCurrentImageIndex(prev => prev > 0 ? prev - 1 : product.images.length - 1)}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"
+                  onClick={() => setLightboxIndex(prev => prev > 0 ? prev - 1 : lightboxImages.length - 1)}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100"
                 >
                   <ChevronLeft className="h-6 w-6" />
                 </button>
                 <button
-                  onClick={() => setCurrentImageIndex(prev => prev < product.images.length - 1 ? prev + 1 : 0)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"
+                  onClick={() => setLightboxIndex(prev => prev < lightboxImages.length - 1 ? prev + 1 : 0)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100"
                 >
                   <ChevronRightIcon className="h-6 w-6" />
                 </button>
@@ -1327,7 +1548,7 @@ const ProductDetail = () => {
             )}
             
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/50 backdrop-blur-sm text-white px-4 py-2 rounded-full">
-              {currentImageIndex + 1} / {product.images.length}
+              {lightboxIndex + 1} / {lightboxImages.length}
             </div>
           </div>
         </DialogContent>
@@ -1376,9 +1597,9 @@ const ProductDetail = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Review Dialog */}
+      {/* Review Dialog with Media Upload */}
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Write a Review</DialogTitle>
           </DialogHeader>
@@ -1424,6 +1645,118 @@ const ProductDetail = () => {
               />
             </div>
 
+            {/* Media Upload Section */}
+            <div>
+              <label className="block text-sm font-semibold mb-2">
+                Photos & Videos (Optional)
+              </label>
+              <p className="text-xs text-gray-600 mb-3">
+                Add up to 5 images (max 5MB each) and 2 videos (max 50MB each)
+              </p>
+
+              {/* Drag & Drop Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                  isDragging
+                    ? 'border-trust-blue bg-blue-50'
+                    : 'border-gray-300 hover:border-gray-400 bg-gray-50'
+                }`}
+              >
+                <Upload className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-sm text-gray-600 mb-1">
+                  Drag and drop files here, or click to select
+                </p>
+                <p className="text-xs text-gray-500">
+                  Supported: JPG, PNG, MP4, MOV
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                  className="hidden"
+                />
+              </div>
+
+              {/* Media Preview */}
+              {mediaFiles.length > 0 && (
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  {mediaFiles.map((media, index) => (
+                    <div key={index} className="relative group">
+                      <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 relative">
+                        {media.type === 'image' ? (
+                          <img
+                            src={media.preview}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="relative w-full h-full">
+                            {media.preview ? (
+                              <img
+                                src={media.preview}
+                                alt={`Video thumbnail ${index + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                <Video className="h-12 w-12 text-gray-400" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                              <PlayCircle className="h-10 w-10 text-white opacity-80" />
+                            </div>
+                          </div>
+                        )}
+
+                        {media.uploading && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <div className="text-center">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                              <p className="text-xs text-white">{media.progress}%</p>
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeMediaFile(index);
+                          }}
+                          className="absolute top-2 right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+
+                        <div className="absolute bottom-2 left-2 flex items-center space-x-1">
+                          {media.type === 'image' ? (
+                            <ImageIcon className="h-4 w-4 text-white drop-shadow" />
+                          ) : (
+                            <Video className="h-4 w-4 text-white drop-shadow" />
+                          )}
+                          <span className="text-xs text-white drop-shadow">
+                            {(media.file.size / 1024 / 1024).toFixed(1)}MB
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-2 flex items-center justify-between text-xs text-gray-600">
+                <span>
+                  {mediaFiles.filter(f => f.type === 'image').length}/5 images, 
+                  {mediaFiles.filter(f => f.type === 'video').length}/2 videos
+                </span>
+              </div>
+            </div>
+
             {hasPurchased && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                 <p className="text-sm text-green-800 flex items-center">
@@ -1438,7 +1771,14 @@ const ProductDetail = () => {
               disabled={submittingReview || !reviewComment.trim()}
               className="w-full"
             >
-              {submittingReview ? 'Submitting...' : 'Submit Review'}
+              {submittingReview ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Uploading...
+                </>
+              ) : (
+                'Submit Review'
+              )}
             </Button>
           </div>
         </DialogContent>
