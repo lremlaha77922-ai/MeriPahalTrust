@@ -32,6 +32,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Gift } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -277,7 +278,16 @@ const ReviewManagement = () => {
 
       if (error) throw error;
 
-      toast.success('Review approved successfully');
+      // Trigger incentive coupon generation
+      const { error: couponError } = await supabase.functions.invoke('generate-review-coupon', {
+        body: { review_id: selectedReview.id },
+      });
+      if (couponError) {
+        console.error('Coupon generation error:', couponError);
+        // Don't block approval on coupon error
+      }
+
+      toast.success('Review approved and reward coupon sent!');
       setApproveDialogOpen(false);
       fetchReviews();
       fetchAnalytics();
@@ -376,6 +386,14 @@ const ReviewManagement = () => {
               <h1 className="text-3xl font-bold text-gray-900">Review Management</h1>
               <p className="text-gray-600 mt-1">Moderate and manage customer reviews</p>
             </div>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/admin/review-incentives')}
+              className="flex items-center space-x-2"
+            >
+              <Gift className="h-4 w-4" />
+              <span>Incentive Settings</span>
+            </Button>
           </div>
         </div>
       </section>
