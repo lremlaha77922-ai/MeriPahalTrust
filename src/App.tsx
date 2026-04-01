@@ -27,6 +27,7 @@ import Gallery from '@/pages/Gallery';
 import Shop from '@/pages/Shop';
 import Cart from '@/pages/Cart';
 import ProductDetail from '@/pages/ProductDetail';
+import Account from '@/pages/Account';
 import NotFound from '@/pages/NotFound';
 
 // Guideline Pages
@@ -81,6 +82,7 @@ function App() {
             <Route path="/admin/reviews" element={<ReviewManagement />} />
             <Route path="/admin/review-incentives" element={<ReviewIncentives />} />
             <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+            <Route path="/account" element={<Account />} />
             
             {/* Guideline Routes */}
             <Route path="/guidelines/attendance" element={<Attendance />} />

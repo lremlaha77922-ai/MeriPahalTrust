@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, ChevronDown, Languages } from 'lucide-react';
+import { Menu, X, ChevronDown, Languages, User, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAdmin } from '@/contexts/AdminContext';
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,6 +11,7 @@ const Header = () => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const { language, setLanguage, t } = useLanguage();
+  const { user } = useAdmin();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -128,13 +130,39 @@ const Header = () => {
             >
               {t('header.team')}
             </Link>
+            {user ? (
+              <Link
+                to="/account"
+                className={`font-medium transition-colors flex items-center space-x-1 ${
+                  isActive('/account') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
+                }`}
+              >
+                <div className="w-7 h-7 bg-trust-blue rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">
+                    {(user.username || user.email || 'U')[0].toUpperCase()}
+                  </span>
+                </div>
+                <span>Account</span>
+              </Link>
+            ) : (
+              <Link
+                to="/admin"
+                className={`font-medium transition-colors ${
+                  isActive('/admin') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
+                }`}
+              >
+                {t('header.adminLogin')}
+              </Link>
+            )}
+
+            {/* Cart Icon */}
             <Link
-              to="/admin"
-              className={`font-medium transition-colors ${
-                isActive('/admin') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
+              to="/cart"
+              className={`font-medium transition-colors flex items-center ${
+                isActive('/cart') ? 'text-trust-blue' : 'text-gray-700 hover:text-trust-blue'
               }`}
             >
-              {t('header.adminLogin')}
+              <ShoppingCart className="h-5 w-5" />
             </Link>
             
             {/* Language Switcher */}
@@ -226,12 +254,31 @@ const Header = () => {
             >
               {t('header.team')}
             </Link>
+            {user ? (
+              <Link
+                to="/account"
+                onClick={() => setIsOpen(false)}
+                className="flex items-center space-x-2 py-2 text-gray-700 hover:text-trust-blue font-medium"
+              >
+                <User className="h-4 w-4" />
+                <span>My Account</span>
+              </Link>
+            ) : (
+              <Link
+                to="/admin"
+                onClick={() => setIsOpen(false)}
+                className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
+              >
+                {t('header.adminLogin')}
+              </Link>
+            )}
             <Link
-              to="/admin"
+              to="/cart"
               onClick={() => setIsOpen(false)}
-              className="block py-2 text-gray-700 hover:text-trust-blue font-medium"
+              className="flex items-center space-x-2 py-2 text-gray-700 hover:text-trust-blue font-medium"
             >
-              {t('header.adminLogin')}
+              <ShoppingCart className="h-4 w-4" />
+              <span>Cart</span>
             </Link>
             <button
               onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
