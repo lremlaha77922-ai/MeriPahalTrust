@@ -9,6 +9,9 @@ import {
   LogOut,
   Menu,
   X,
+  ShoppingBag,
+  Star,
+  Package,
 } from 'lucide-react';
 import RegistrationApplications from './RegistrationApplications';
 import JoiningApplications from './JoiningApplications';
@@ -134,6 +137,51 @@ const AdminPanel = () => {
                   </h3>
                   <p className="text-gray-600">
                     View and manage Swastha Sangini applications
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => navigate('/admin/products')}
+                  className="bg-white p-8 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-orange-500"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <ShoppingBag className="h-12 w-12 text-orange-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                    Product Management
+                  </h3>
+                  <p className="text-gray-600">
+                    Add, edit, and manage Desi Didi Mart products
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => navigate('/admin/orders')}
+                  className="bg-white p-8 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-purple-600"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <Package className="h-12 w-12 text-purple-600" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                    Order Management
+                  </h3>
+                  <p className="text-gray-600">
+                    View and manage customer orders and statuses
+                  </p>
+                </div>
+
+                <div
+                  onClick={() => navigate('/admin/reviews')}
+                  className="bg-white p-8 rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-yellow-500"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <Star className="h-12 w-12 text-yellow-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                    Review Management
+                  </h3>
+                  <p className="text-gray-600">
+                    Moderate customer reviews and manage incentives
                   </p>
                 </div>
               </div>

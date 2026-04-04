@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { LogOut, Users, UserCheck, UserX, AlertTriangle, FileText, Download, Edit, UserPlus, LayoutDashboard, Wallet, Image } from 'lucide-react';
+import { LogOut, Users, UserCheck, UserX, AlertTriangle, FileText, Download, Edit, UserPlus, LayoutDashboard, Wallet, Image, ShoppingBag } from 'lucide-react';
 import { Employee, PdfSubmission, Deposit, ProfileEditRequest } from '@/types';
 import AddTeamMember from '@/components/features/AddTeamMember';
 import AdminGalleryManagement from '@/components/features/AdminGalleryManagement';
@@ -381,6 +381,13 @@ const AdminDashboard = () => {
           >
             <Image className="mr-2 h-4 w-4" />
             फोटो गैलरी
+          </Button>
+          <Button
+            onClick={() => navigate('/admin/products')}
+            variant="outline"
+          >
+            <ShoppingBag className="mr-2 h-4 w-4" />
+            Products
           </Button>
         </div>
 

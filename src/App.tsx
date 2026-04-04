@@ -14,6 +14,7 @@ import AdminPanel from '@/pages/admin/AdminPanel';
 import OrderManagement from '@/pages/admin/OrderManagement';
 import ReviewManagement from '@/pages/admin/ReviewManagement';
 import ReviewIncentives from '@/pages/admin/ReviewIncentives';
+import ProductManagement from '@/pages/admin/ProductManagement';
 import EmployeeDashboard from '@/pages/EmployeeDashboard';
 import DesiDidiMart from '@/pages/DesiDidiMart';
 import SwasthaSangini from '@/pages/SwasthaSangini';
@@ -81,6 +82,7 @@ function App() {
             <Route path="/admin/orders" element={<OrderManagement />} />
             <Route path="/admin/reviews" element={<ReviewManagement />} />
             <Route path="/admin/review-incentives" element={<ReviewIncentives />} />
+            <Route path="/admin/products" element={<ProductManagement />} />
             <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
             <Route path="/account" element={<Account />} />
             
